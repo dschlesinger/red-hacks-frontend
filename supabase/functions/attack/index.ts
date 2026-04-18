@@ -155,6 +155,31 @@ async function applyCoinSteal(
   return row
 }
 
+async function incrementTeamCoins(
+  supabaseAdmin: any,
+  teamId: string,
+  delta: number
+) {
+  const { data, error } = await supabaseAdmin.rpc('increment_team_coins', {
+    p_team_id: teamId,
+    p_delta: delta
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Failed to increment team coins')
+  }
+
+  if (typeof data === 'number') {
+    return data
+  }
+
+  if (Array.isArray(data) && typeof data[0] === 'number') {
+    return data[0]
+  }
+
+  return null
+}
+
 Deno.serve(async (req) => {
   console.log('hit attack function endpoint')
   const corsHeaders = {
@@ -562,6 +587,8 @@ Deno.serve(async (req) => {
 
       if (guess.toLowerCase().trim() === configuredSecretKey.toLowerCase().trim()) {
         let transferResult: any = null
+        let pveRewardCoins = 0
+        let attackerCoinsAfter: number | null = null
 
         if (!isPveTarget) {
           transferResult = await applyCoinSteal(
@@ -577,6 +604,12 @@ Deno.serve(async (req) => {
               .update({ is_active: false })
               .eq('team_id', targetDetails.team_id)
           }
+        } else {
+          pveRewardCoins = Math.max(0, Math.trunc(challenges?.attack_steal_coins ?? 0))
+
+          if (pveRewardCoins > 0) {
+            attackerCoinsAfter = await incrementTeamCoins(supabaseAdmin, attackerTeamId, pveRewardCoins)
+          }
         }
 
         const attackLog = {
@@ -584,9 +617,9 @@ Deno.serve(async (req) => {
           victory_condition: 'secret-key',
           outcome: 'success',
           assistant_message: 'System breached. Key accepted.',
-          stolen_coins: transferResult?.stolen_coins ?? 0,
+          stolen_coins: isPveTarget ? pveRewardCoins : transferResult?.stolen_coins ?? 0,
           defender_coins_after: transferResult?.defender_coins ?? null,
-          attacker_coins_after: transferResult?.attacker_coins ?? null,
+          attacker_coins_after: isPveTarget ? attackerCoinsAfter : transferResult?.attacker_coins ?? null,
           defender_eliminated: transferResult?.defender_eliminated ?? false
         }
 
@@ -604,10 +637,10 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           message: isPveTarget
-            ? 'The secret key was successfully extracted.'
+            ? `The secret key was successfully extracted! Earned ${pveRewardCoins} coins.`
             : `The secret key was successfully extracted! Stole ${transferResult?.stolen_coins ?? 0} coins.`,
           log: 'System breached. Key accepted.',
-          stolen_coins: transferResult?.stolen_coins ?? 0,
+          stolen_coins: isPveTarget ? pveRewardCoins : transferResult?.stolen_coins ?? 0,
           defender_eliminated: transferResult?.defender_eliminated ?? false
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
@@ -710,6 +743,8 @@ Deno.serve(async (req) => {
     }
 
     let transferResult: any = null
+    let pveRewardCoins = 0
+    let attackerCoinsAfter: number | null = null
 
     if (challenges.type === 'secret-key' && configuredSecretKey && openAiResponse.toLowerCase().includes(configuredSecretKey.toLowerCase())) {
       isSuccessful = true
@@ -729,6 +764,12 @@ Deno.serve(async (req) => {
           .update({ is_active: false })
           .eq('team_id', targetDetails.team_id)
       }
+    } else if (isSuccessful && isPveTarget) {
+      pveRewardCoins = Math.max(0, Math.trunc(challenges?.attack_steal_coins ?? 0))
+
+      if (pveRewardCoins > 0) {
+        attackerCoinsAfter = await incrementTeamCoins(supabaseAdmin, attackerTeamId, pveRewardCoins)
+      }
     }
 
     const attackLog = {
@@ -738,9 +779,9 @@ Deno.serve(async (req) => {
       called_tools: calledTools,
       target_tool_name: challenges.target_tool_name,
       outcome: isSuccessful ? 'success' : 'failed',
-      stolen_coins: transferResult?.stolen_coins ?? 0,
+      stolen_coins: isPveTarget ? pveRewardCoins : transferResult?.stolen_coins ?? 0,
       defender_coins_after: transferResult?.defender_coins ?? null,
-      attacker_coins_after: transferResult?.attacker_coins ?? null,
+      attacker_coins_after: isPveTarget ? attackerCoinsAfter : transferResult?.attacker_coins ?? null,
       defender_eliminated: transferResult?.defender_eliminated ?? false
     }
 
@@ -759,13 +800,13 @@ Deno.serve(async (req) => {
       success: isSuccessful,
       message: isSuccessful
         ? isPveTarget
-          ? 'Victory condition met.'
+          ? `Victory condition met. Earned ${pveRewardCoins} coins.`
           : `Victory condition met. Stole ${transferResult?.stolen_coins ?? 0} coins.`
         : 'Prompt evaluated by the model. Read output below.',
       log: `Model Output: ${openAiResponse}`,
       assistant: openAiResponse,
       tool_calls: calledTools,
-      stolen_coins: transferResult?.stolen_coins ?? 0,
+      stolen_coins: isPveTarget ? pveRewardCoins : transferResult?.stolen_coins ?? 0,
       defender_eliminated: transferResult?.defender_eliminated ?? false,
       challenge_id: isPveTarget ? challenge_id : null
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
