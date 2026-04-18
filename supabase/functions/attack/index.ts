@@ -62,6 +62,11 @@ function normalizeAssistantContent(content: unknown): string {
   return 'No response received'
 }
 
+function generateSecretKeyCode(): string {
+  const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()
+  return `FLAG{${compact}}`
+}
+
 function extractSecretKey(...sources: unknown[]): string | null {
   for (const source of sources) {
     if (typeof source !== 'string') continue
@@ -286,6 +291,57 @@ Deno.serve(async (req) => {
         })
       }
 
+      let pveSecretKey: string | null = null
+
+      if (challengeData.type === 'secret-key') {
+        const { data: existingPveKey, error: existingPveKeyError } = await supabaseAdmin
+          .from('pve_challenge_keys')
+          .select('target_secret_key')
+          .eq('game_id', game_id)
+          .eq('challenge_id', challenge_id)
+          .maybeSingle()
+
+        if (existingPveKeyError) {
+          return new Response(JSON.stringify({ error: 'Could not load PvE secret key configuration' }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const existingKey = typeof existingPveKey?.target_secret_key === 'string'
+          ? existingPveKey.target_secret_key.trim()
+          : ''
+
+        if (existingKey.length > 0) {
+          pveSecretKey = existingKey
+        } else {
+          const generatedKey = generateSecretKeyCode()
+          const { data: createdPveKey, error: createPveKeyError } = await supabaseAdmin
+            .from('pve_challenge_keys')
+            .upsert(
+              {
+                game_id,
+                challenge_id,
+                target_secret_key: generatedKey
+              },
+              { onConflict: 'game_id,challenge_id' }
+            )
+            .select('target_secret_key')
+            .single()
+
+          if (createPveKeyError) {
+            return new Response(JSON.stringify({ error: 'Could not create PvE secret key configuration' }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            })
+          }
+
+          pveSecretKey = typeof createdPveKey?.target_secret_key === 'string'
+            ? createdPveKey.target_secret_key.trim()
+            : generatedKey
+        }
+      }
+
       gameId = roundDetails.game_id
       isPveTarget = true
       targetDetails = {
@@ -293,7 +349,7 @@ Deno.serve(async (req) => {
         team_id: null,
         challenge_id,
         defended_challenge_id: null,
-        target_secret_key: null,
+        target_secret_key: pveSecretKey,
         system_prompt: challengeData.default_prompt?.trim() || challengeData.context?.trim() || 'You are a helpful assistant.',
         teams: {
           name: roundDetails.name ?? 'Default Defense',

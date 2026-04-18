@@ -4,6 +4,7 @@
   import {
     computePlannedRoundMinutes,
     computeRoundsBasedEndTime,
+    ensurePveSecretKeys,
     loadGameChallenges,
     loadGameRounds,
     replaceGameChallenges,
@@ -244,6 +245,7 @@
       if (roundDrafts.length > 0) {
         await replaceGameRounds(supabase, gameId, roundDrafts);
       }
+      await ensurePveSecretKeys(supabase, gameId, roundDrafts);
     } catch (err: any) {
       errorMsg = `Game updated, but challenges/rounds failed: ${err.message}`;
       saving = false;

@@ -32,6 +32,11 @@ export function generateInviteCode(): string {
 	return Math.random().toString(36).substring(2, 8).toUpperCase()
 }
 
+export function generateSecretKeyCode(): string {
+	const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()
+	return `FLAG{${compact}}`
+}
+
 export function computePlannedRoundMinutes(rounds: RoundDraft[]): number {
 	// Disabled rounds don't contribute to the schedule, matching the runtime
 	// phase computation that filters them out.
@@ -162,6 +167,63 @@ export async function replaceGameRounds(
 		}))
 	)
 
+	if (insertError) throw insertError
+}
+
+export async function ensurePveSecretKeys(
+	supabase: SupabaseClient,
+	gameId: string,
+	roundsToSave: RoundDraft[]
+): Promise<void> {
+	const pveChallengeIds = Array.from(
+		new Set(
+			roundsToSave
+				.filter((round) => round.type === 'pve')
+				.flatMap((round) => round.available_challenges)
+		)
+	)
+
+	if (pveChallengeIds.length === 0) return
+
+	const { data: secretKeyChallenges, error: challengeError } = await supabase
+		.from('challenges')
+		.select('id')
+		.in('id', pveChallengeIds)
+		.eq('type', 'secret-key')
+
+	if (challengeError) throw challengeError
+
+	const secretKeyChallengeIds = (secretKeyChallenges ?? [])
+		.map((row: any) => row.id)
+		.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+
+	if (secretKeyChallengeIds.length === 0) return
+
+	const { data: existingRows, error: existingError } = await supabase
+		.from('pve_challenge_keys')
+		.select('challenge_id')
+		.eq('game_id', gameId)
+		.in('challenge_id', secretKeyChallengeIds)
+
+	if (existingError) throw existingError
+
+	const existingChallengeIds = new Set(
+		(existingRows ?? [])
+			.map((row: any) => row.challenge_id)
+			.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+	)
+
+	const rowsToInsert = secretKeyChallengeIds
+		.filter((challengeId) => !existingChallengeIds.has(challengeId))
+		.map((challengeId) => ({
+			game_id: gameId,
+			challenge_id: challengeId,
+			target_secret_key: generateSecretKeyCode()
+		}))
+
+	if (rowsToInsert.length === 0) return
+
+	const { error: insertError } = await supabase.from('pve_challenge_keys').insert(rowsToInsert)
 	if (insertError) throw insertError
 }
 

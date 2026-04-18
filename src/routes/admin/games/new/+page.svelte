@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import {
+    ensurePveSecretKeys,
     defaultStartTime,
     computeRoundsBasedEndTime,
     computePlannedRoundMinutes,
@@ -239,6 +240,7 @@
     try {
       await replaceGameChallenges(supabase, createdGame.id, challengePool);
       await replaceGameRounds(supabase, createdGame.id, roundsToSave);
+      await ensurePveSecretKeys(supabase, createdGame.id, roundsToSave);
     } catch (challengeError: any) {
       errorMsg = `Game created, but round or challenge mapping failed: ${challengeError.message}`;
       loading = false;

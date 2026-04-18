@@ -207,6 +207,11 @@ function asValidDateMs(value: string | null | undefined): number | null {
   return ms;
 }
 
+function generateSecretKeyCode(): string {
+  const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase();
+  return `FLAG{${compact}}`;
+}
+
 /**
  * Call the judge LLM via OpenRouter to evaluate a judge-type challenge
  * attack transcript. Returns a parsed verdict or {ok:false} on any
@@ -630,6 +635,49 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
       if (challengeError || !challengeData) {
         return json({ success: false, error: 'Challenge not found' }, { status: 404 });
+      }
+
+      if (challengeData.type === 'secret-key') {
+        const { data: existingPveKey, error: existingPveKeyError } = await supabaseAdmin
+          .from('pve_challenge_keys')
+          .select('target_secret_key')
+          .eq('game_id', gameId)
+          .eq('challenge_id', challengeData.id)
+          .maybeSingle();
+
+        if (existingPveKeyError) {
+          return json({ success: false, error: 'Could not load PvE secret key configuration' }, { status: 500 });
+        }
+
+        const existingKey = typeof existingPveKey?.target_secret_key === 'string'
+          ? existingPveKey.target_secret_key.trim()
+          : '';
+
+        if (existingKey.length > 0) {
+          targetSecretKey = existingKey;
+        } else {
+          const generatedKey = generateSecretKeyCode();
+          const { data: createdPveKey, error: createPveKeyError } = await supabaseAdmin
+            .from('pve_challenge_keys')
+            .upsert(
+              {
+                game_id: gameId,
+                challenge_id: challengeData.id,
+                target_secret_key: generatedKey
+              },
+              { onConflict: 'game_id,challenge_id' }
+            )
+            .select('target_secret_key')
+            .single();
+
+          if (createPveKeyError) {
+            return json({ success: false, error: 'Could not create PvE secret key configuration' }, { status: 500 });
+          }
+
+          targetSecretKey = typeof createdPveKey?.target_secret_key === 'string'
+            ? createdPveKey.target_secret_key.trim()
+            : generatedKey;
+        }
       }
 
       if (!activeRoundChallengeIds.includes(challengeData.id)) {
