@@ -426,12 +426,13 @@ Deno.serve(async (req) => {
     }
 
     const { challenges, target_secret_key, system_prompt } = targetDetails
-    const configuredSecretKey = extractSecretKey(
-      target_secret_key,
-      challenges?.context,
-      challenges?.default_prompt,
-      system_prompt
-    )
+    const configuredSecretKey =
+      (typeof target_secret_key === 'string' ? target_secret_key.trim() : '') ||
+      extractSecretKey(
+        challenges?.context,
+        challenges?.default_prompt,
+        system_prompt
+      )
 
     let attackerTeamId: string | null = null
 

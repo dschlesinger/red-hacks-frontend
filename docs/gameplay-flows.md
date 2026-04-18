@@ -47,6 +47,7 @@ If you implement a backend route for `challenge_url`, keep it payload-compatible
 
 Required compatibility:
 - Accept the current attack payload fields (`prompt`, `guess`, `messages`, and target identifiers).
+- For secret-key challenges, also accept the resolved `target_secret_key` at the top level of the payload.
 - Accept the resolved challenge object, including server-only fields such as `target_secret_key` for secret-key challenges.
 - Return JSON that includes at least `success` and a short result message (`output_message` or `message`).
 

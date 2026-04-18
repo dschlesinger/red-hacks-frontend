@@ -394,6 +394,7 @@ function buildAttackRequestPayload(body: AttackRequestBody, targetDetails: any, 
   const payload: Record<string, unknown> = {
     prompt: mergedPrompt,
     guess: body.guess?.trim() || '',
+    target_secret_key: targetSecretKey ?? '',
     messages: messagesWithAttachments,
     attachments: attachmentSummaries.map((attachment) => ({
       name: attachment.name,

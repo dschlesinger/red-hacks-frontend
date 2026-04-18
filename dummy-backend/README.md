@@ -85,6 +85,7 @@ PvP-style payload:
   "defended_challenge_id": "uuid",
   "prompt": "latest user message",
   "guess": "optional",
+  "target_secret_key": "resolved-secret-key",
   "messages": [
     {"role": "user", "content": "Hello"},
     {"role": "assistant", "content": "Hi"},
