@@ -2,6 +2,12 @@
 // Used by /admin/games, /admin/games/new, /admin/games/[gameId]/edit.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import secretKeysRaw from '$lib/assets/secret_keys.txt?raw'
+
+const SECRET_KEY_WORDS = secretKeysRaw
+	.split(/\r?\n/)
+	.map((word) => word.trim())
+	.filter((word) => word.length > 0)
 
 export type RoundDraft = {
 	round_index: number
@@ -33,8 +39,9 @@ export function generateInviteCode(): string {
 }
 
 export function generateSecretKeyCode(): string {
-	const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()
-	return `FLAG{${compact}}`
+	if (SECRET_KEY_WORDS.length === 0) return 'marble'
+	const index = Math.floor(Math.random() * SECRET_KEY_WORDS.length)
+	return SECRET_KEY_WORDS[index]
 }
 
 export function computePlannedRoundMinutes(rounds: RoundDraft[]): number {

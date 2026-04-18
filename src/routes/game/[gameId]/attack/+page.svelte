@@ -21,7 +21,6 @@
 <script lang="ts">
   import { PUBLIC_MAX_UPLOAD_MB } from '$env/static/public';
   import { page } from '$app/stores';
-  import { calculateAttackBonus, SOFT_CHAR_CAP, SOFT_TURN_CAP } from '$lib/bonus';
   import GameSectionNav from '$lib/components/GameSectionNav.svelte';
   import { isGameActive, loadRoundChallengeIds, loadRoundRuntimeContext, resolveRoundType } from '$lib/gameplay';
   import { supabase } from '$lib/supabaseClient';
@@ -116,25 +115,6 @@
     return ackedAttackIds.has(attackId);
   }
   let chatStorageKey = $derived(`attack-chat:${gameId}:${attackMode}:${selectedChallengeId}`);
-
-  // Reward preview is fully server-driven. We never use the local messages
-  // array for turn/char counting — that's what Clear Chat empties. The server
-  // logs every attempt (including judge per-turn prompts) to the attacks table,
-  // and `refreshServerTurnCount` below reads that count. The only client-side
-  // input is the draft prompt the user is currently typing — that's the
-  // "+1 turn" we're previewing.
-  let potentialReward = $derived.by(() => {
-    const draftChars = promptInput.length;
-    const priorTurns = serverTurnCount ?? 0;
-    const priorChars = serverCharCount ?? 0;
-
-    return calculateAttackBonus({
-      turnCount: priorTurns + 1,
-      charCount: priorChars + draftChars,
-      attackStealCoins: selectedTarget?.challenges?.attack_steal_coins ?? 0,
-      defenseRewardCoins: selectedTarget?.challenges?.defense_reward_coins ?? 0
-    });
-  });
 
   function hasActiveSession(targetId: string): boolean {
     try {
@@ -235,14 +215,13 @@
   }
 
   function clearChatHistory() {
-    if (!confirm('Are you sure you want to clear chat?\n\nThis resets the LLM conversation (the model forgets prior context) but does NOT reset your server-side bonus tracking. Your elegance score is based on ALL attempts you have sent, including cleared ones.')) {
+    if (!confirm('Are you sure you want to clear chat?\n\nThis resets the LLM conversation (the model forgets prior context).')) {
       return;
     }
     messages = [];
     attackResult = null;
     if (chatStorageKey) localStorage.removeItem(chatStorageKey);
-    // Refresh the server-side attempt count so the bonus preview stays
-    // accurate instead of jumping back to 100%.
+    // Refresh the server-side attempt count for the next prompt.
     void refreshServerTurnCount();
   }
 
@@ -265,7 +244,7 @@
         return;
       }
 
-      // Mirror the server-side windowing from computeEleganceBonus:
+      // Mirror the server-side reward windowing:
       // turn count = failed attempts with created_at > max(last_success, updated_at).
       // Without this, a successful attack leaves phantom failed-turn history
       // from the pre-success window haunting the next attack's preview.
@@ -556,8 +535,7 @@
           c.id === selectedChallengeId ? { ...c, compromised_by_me: true } : c
         );
       }
-      // Refresh the server-side bonus window so Attack Again picks up the
-      // advanced windowStart immediately when the user chooses to retry.
+      // Refresh the server-side window immediately when the user chooses to retry.
       void refreshServerTurnCount();
     } catch (err: any) {
       attackResult = { success: false, error: err?.message || 'Unexpected error ending attack.' };
@@ -580,8 +558,7 @@
   }
 
   // Attack Again: wipe chat + acknowledge the current verdict so we don't
-  // re-surface it on the next target switch. Refresh server windowing so the
-  // bonus preview drops back to turn 1.
+  // re-surface it on the next target switch.
   function attackAgain() {
     markAttackAcked(attackResult?.attack_id);
     messages = [];
@@ -615,10 +592,6 @@
         coefficient: row.judge_coefficient,
         judge_reason: row.judge_reason,
         stolen_coins: log.attacker_payout ?? log.stolen_coins,
-        base_coins: log.base_coins,
-        bonus_coins: log.bonus_coins,
-        elegance_factor: log.elegance_factor,
-        max_bonus: log.max_bonus,
         turn_count: log.turn_count,
         char_count: log.char_count,
         resolved_by_admin: row.escalation_status === 'resolved',
@@ -635,10 +608,6 @@
       assistant: typeof log.assistant_message === 'string' ? log.assistant_message : null,
       message: 'Target compromised.',
       stolen_coins: log.stolen_coins,
-      base_coins: log.base_coins,
-      bonus_coins: log.bonus_coins,
-      elegance_factor: log.elegance_factor,
-      max_bonus: log.max_bonus,
       turn_count: log.turn_count,
       char_count: log.char_count,
       log: typeof log.backend_log === 'string' ? log.backend_log : null
@@ -1006,7 +975,7 @@
             onclick={clearChatHistory}
             disabled={attackLocked}
             class="px-2.5 py-1 rounded border border-white/20 hover:border-white/40 text-xs text-gray-300 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-white/20"
-            title={attackLocked ? 'Attack finalized. Use Attack Again to start a new attempt.' : 'Resets the LLM conversation only. Server still counts prior attempts for bonus.'}
+            title={attackLocked ? 'Attack finalized. Use Attack Again to start a new attempt.' : 'Resets the LLM conversation only.'}
           >
             Clear Chat
           </button>
@@ -1063,12 +1032,7 @@
                 {/if}
                 {#if isRealTier && typeof attackResult.stolen_coins === 'number'}
                   <div class="mt-3 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-xs font-mono text-gray-200">
-                    {#if attackResult.bonus_coins > 0}
-                      <span class="font-semibold">{attackResult.stolen_coins} coins</span> = {attackResult.base_coins ?? 0} base + {attackResult.bonus_coins} bonus
-                    {:else}
-                      <span class="font-semibold">{attackResult.stolen_coins} coins</span> base only
-                    {/if}
-                    {#if typeof attackResult.elegance_factor === 'number'}· elegance {Math.round(attackResult.elegance_factor * 100)}%{/if}
+                    <span class="font-semibold">{attackResult.stolen_coins} coins</span>
                     {#if typeof attackResult.turn_count === 'number'}· {attackResult.turn_count} {attackResult.turn_count === 1 ? 'turn' : 'turns'}{/if}
                   </div>
                 {/if}
@@ -1081,7 +1045,7 @@
                     >
                       ↻ Attack Again
                     </button>
-                    <span class="ml-3 text-xs text-gray-400">Clears the chat and resets your bonus clock. Judge verdict stands.</span>
+                    <span class="ml-3 text-xs text-gray-400">Clears the chat for a fresh attempt. Judge verdict stands.</span>
                   </div>
                 {/if}
               </div>
@@ -1089,18 +1053,9 @@
               <div class="p-4 rounded-xl border {isSuccess ? 'bg-green-500/10 border-green-500/50 text-green-400' : isError ? 'bg-red-500/10 border-red-500/50 text-red-500' : 'bg-amber-500/10 border-amber-500/50 text-amber-300'}">
                 <div class="font-black text-lg mb-2">{isSuccess ? '✅ TARGET COMPROMISED!' : isError ? '⚠️ ATTACK ERROR' : '↻ ATTEMPT COMPLETE - KEEP PUSHING'}</div>
                 <div class="text-sm opacity-90 font-medium">{attackResult.message || attackResult.error || 'No compromise yet. Refine your prompt and try again.'}</div>
-                {#if isSuccess && typeof attackResult.bonus_coins === 'number' && attackResult.bonus_coins > 0}
-                  <div class="mt-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-mono">
-                    <div class="font-semibold">⚡ Elegance bonus: +{attackResult.bonus_coins} coins</div>
-                    <div class="opacity-80 mt-1">
-                      {attackResult.base_coins ?? 0} base + {attackResult.bonus_coins} bonus = {attackResult.stolen_coins ?? 0} total
-                      {#if typeof attackResult.elegance_factor === 'number'}· elegance {Math.round(attackResult.elegance_factor * 100)}%{/if}
-                      {#if typeof attackResult.turn_count === 'number'}· {attackResult.turn_count} {attackResult.turn_count === 1 ? 'turn' : 'turns'}{/if}
-                    </div>
-                  </div>
-                {:else if isSuccess && typeof attackResult.base_coins === 'number'}
+                {#if isSuccess && typeof attackResult.stolen_coins === 'number'}
                   <div class="mt-3 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-gray-300 text-xs font-mono">
-                    Base reward: {attackResult.base_coins} coins (elegance exhausted, no bonus)
+                    Reward: {attackResult.stolen_coins} coins
                   </div>
                 {/if}
                 {#if attackResult.log}
@@ -1116,59 +1071,23 @@
           <div class="flex items-center justify-between flex-wrap gap-2">
             <p class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Attack Prompt</p>
             {#if serverTurnCount === null}
-              <!-- Server hasn't reported the count yet. Show a placeholder
-                   instead of a number so we never display an inflated reward. -->
               <div class="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-xs font-mono text-gray-500">
-                loading reward…
-              </div>
-            {:else if selectedTarget?.challenges?.type === 'judge'}
-              <!-- Judge challenges: coefficient is picked by the judge, so the
-                   preview above doesn't reflect the actual payout — only the
-                   max (full verdict). Show that max honestly and surface the
-                   per-tier breakdown below. -->
-              <div class="px-3 py-1.5 rounded-lg bg-amber-900/30 border border-amber-500/30 text-xs font-mono text-amber-200">
-                {#if potentialReward.base === 0}
-                  Reward: <strong>0</strong> (no steal configured)
-                {:else}
-                  Max reward: <strong class="text-amber-100">{potentialReward.total}</strong>
-                  <span class="text-amber-400/70">· judge picks tier · turn {(serverTurnCount ?? 0) + 1}</span>
-                {/if}
+                loading status…
               </div>
             {:else}
               <div class="px-3 py-1.5 rounded-lg bg-amber-900/30 border border-amber-500/30 text-xs font-mono text-amber-200">
-                {#if potentialReward.base === 0}
+                {#if (selectedTarget?.challenges?.attack_steal_coins ?? 0) === 0}
                   Reward: <strong>0</strong> (no steal configured)
-                {:else if potentialReward.bonus > 0}
-                  Reward: <strong class="text-amber-100">{potentialReward.total}</strong>
-                  = {potentialReward.base} + <strong class="text-green-300">{potentialReward.bonus}</strong> bonus
-                  <span class="text-amber-400/70">· {Math.round(potentialReward.eleganceFactor * 100)}% · turn {(serverTurnCount ?? 0) + 1}</span>
                 {:else}
-                  Reward: <strong>{potentialReward.base}</strong> base only
+                  Reward: <strong>{selectedTarget?.challenges?.attack_steal_coins ?? 0}</strong> coins
+                  <span class="text-amber-400/70">· turn {(serverTurnCount ?? 0) + 1}</span>
                 {/if}
               </div>
             {/if}
           </div>
-          {#if selectedTarget?.challenges?.type === 'judge' && potentialReward.base > 0}
-            {@const stealCoins = selectedTarget?.challenges?.attack_steal_coins ?? 0}
-            {@const defenseReward = selectedTarget?.challenges?.defense_reward_coins ?? 0}
-            {@const elegance = potentialReward.eleganceFactor}
-            {@const tiersBreakdown = [
-              { name: 'none', coef: 0 },
-              { name: 'structural', coef: 0.25 },
-              { name: 'partial', coef: 0.5 },
-              { name: 'substantial', coef: 0.75 },
-              { name: 'full', coef: 1 }
-            ].map((t) => {
-              const scaledBase = Math.floor(stealCoins * t.coef);
-              const scaledMaxBonus = Math.min(defenseReward, 3 * scaledBase);
-              const scaledBonus = Math.floor(scaledMaxBonus * elegance);
-              return { ...t, total: scaledBase + scaledBonus };
-            })}
-            <div class="px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-[11px] font-mono text-gray-400 flex gap-3 flex-wrap">
-              <span class="text-gray-500">tier payouts at current elegance ({Math.round(elegance * 100)}%):</span>
-              {#each tiersBreakdown as t}
-                <span><span class="text-gray-500">{t.name}:</span> <span class="text-gray-200">{t.total}</span></span>
-              {/each}
+          {#if selectedTarget?.challenges?.type === 'judge'}
+            <div class="px-3 py-2 rounded-lg bg-black/40 border border-white/10 text-[11px] font-mono text-gray-400">
+              Judge challenges settle reward after verdict.
             </div>
           {/if}
           <textarea bind:value={promptInput} onkeydown={handlePromptKeydown} class="w-full bg-black/60 border border-white/10 rounded-xl p-4 text-white h-28 focus:ring-2 focus:ring-red-500/50 focus:border-red-500 outline-none transition-all placeholder:text-gray-600 font-mono text-sm resize-y" placeholder="> Type your attack prompt... (Enter to send · Shift+Enter for newline)"></textarea>

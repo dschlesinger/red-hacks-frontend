@@ -11,6 +11,7 @@ import {
   type JudgeRubric,
   type JudgeVerdict
 } from '$lib/judge';
+import secretKeysRaw from '$lib/assets/secret_keys.txt?raw';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { createClient } from '@supabase/supabase-js';
 
@@ -61,6 +62,10 @@ type AttachmentSummary = {
 
 const DEFAULT_MAX_UPLOAD_MB = 10;
 const ATTACHMENT_CONTEXT_CHAR_LIMIT = 12000;
+const SECRET_KEY_WORDS = secretKeysRaw
+  .split(/\r?\n/)
+  .map((word) => word.trim())
+  .filter((word) => word.length > 0);
 
 function createSupabaseAdminClient() {
   const supabaseUrl = PUBLIC_SUPABASE_URL;
@@ -208,8 +213,9 @@ function asValidDateMs(value: string | null | undefined): number | null {
 }
 
 function generateSecretKeyCode(): string {
-  const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase();
-  return `FLAG{${compact}}`;
+  if (SECRET_KEY_WORDS.length === 0) return 'marble';
+  const index = Math.floor(Math.random() * SECRET_KEY_WORDS.length);
+  return SECRET_KEY_WORDS[index];
 }
 
 /**

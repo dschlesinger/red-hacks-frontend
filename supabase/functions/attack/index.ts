@@ -17,6 +17,31 @@ type RoundRow = {
   intermission_minutes: number | null
 }
 
+const SECRET_KEY_WORDS = [
+  'marble',
+  'thunder',
+  'cactus',
+  'orbit',
+  'velvet',
+  'harbor',
+  'pinecone',
+  'amber',
+  'lantern',
+  'meadow',
+  'quartz',
+  'raven',
+  'summit',
+  'teacup',
+  'willow',
+  'ember',
+  'falcon',
+  'glacier',
+  'mintleaf',
+  'sunbeam'
+]
+
+const SECRET_KEY_WORD_SET = new Set(SECRET_KEY_WORDS.map((word) => word.toLowerCase()))
+
 function normalizeMessages(messages: unknown): ChatMessage[] {
   if (!Array.isArray(messages)) return []
 
@@ -63,17 +88,32 @@ function normalizeAssistantContent(content: unknown): string {
 }
 
 function generateSecretKeyCode(): string {
-  const compact = crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase()
-  return `FLAG{${compact}}`
+  if (SECRET_KEY_WORDS.length === 0) return 'marble'
+  const index = Math.floor(Math.random() * SECRET_KEY_WORDS.length)
+  return SECRET_KEY_WORDS[index]
 }
 
 function extractSecretKey(...sources: unknown[]): string | null {
   for (const source of sources) {
     if (typeof source !== 'string') continue
 
+    const trimmed = source.trim()
+    if (trimmed.length === 0) continue
+
+    if (SECRET_KEY_WORD_SET.has(trimmed.toLowerCase())) {
+      return trimmed
+    }
+
     const match = source.match(/FLAG\{[^}]+\}/i)
     if (match?.[0]) {
       return match[0]
+    }
+
+    for (const word of SECRET_KEY_WORDS) {
+      const wordRegex = new RegExp(`\\b${word}\\b`, 'i')
+      if (wordRegex.test(trimmed)) {
+        return word
+      }
     }
   }
 
