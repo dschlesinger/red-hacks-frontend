@@ -83,8 +83,8 @@ export function validateRoundDraft(round: RoundDraft): string | null {
 	}
 
 	const defenses = Number(round.required_defenses)
-	if (!Number.isInteger(defenses) || defenses <= 0) {
-		return `Round "${trimmedName}": required defenses must be a positive whole number.`
+	if (!Number.isInteger(defenses) || defenses < 0) {
+		return `Round "${trimmedName}": required defenses must be a non-negative whole number.`
 	}
 
 	if (defenses >= n) {
@@ -147,7 +147,7 @@ export async function replaceGameRounds(
 			round_index: index,
 			name: round.name.trim(),
 			type: round.type,
-			required_defenses: Math.max(1, Math.trunc(round.required_defenses)),
+			required_defenses: Math.max(0, Math.trunc(round.required_defenses)),
 			duration_minutes: Math.max(1, Math.trunc(round.duration_minutes)),
 			intermission_minutes: Math.max(0, Math.trunc(round.intermission_minutes)),
 			available_challenges: Array.from(new Set(round.available_challenges)),
@@ -250,7 +250,7 @@ export async function loadGameRounds(
 		round_index: index,
 		name: row.name ?? `Round ${index + 1}`,
 		type: row.type === 'pve' ? 'pve' : 'pvp',
-		required_defenses: Math.max(1, Math.trunc(row.required_defenses ?? 1)),
+		required_defenses: Math.max(0, Math.trunc(row.required_defenses ?? 0)),
 		duration_minutes: Math.max(1, Math.trunc(row.duration_minutes ?? 60)),
 		intermission_minutes: Math.max(0, Math.trunc(row.intermission_minutes ?? 0)),
 		available_challenges: Array.isArray(row.available_challenges) ? row.available_challenges : [],

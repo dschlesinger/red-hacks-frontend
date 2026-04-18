@@ -39,7 +39,7 @@
   // Round draft form state
   let roundName = $state('Round 1');
   let roundType = $state<'pvp' | 'pve'>('pvp');
-  let roundRequiredDefenses = $state(1);
+  let roundRequiredDefenses = $state(0);
   let roundDurationMinutes = $state(60);
   let roundIntermissionMinutes = $state(5);
   let roundChallengeIds = $state<string[]>([]);
@@ -53,7 +53,7 @@
   function resetRoundDraftFields() {
     roundName = `Round ${roundDrafts.length + 1}`;
     roundType = 'pvp';
-    roundRequiredDefenses = Math.max(1, allChallenges.length - 1 || 1);
+    roundRequiredDefenses = Math.max(0, allChallenges.length - 1);
     roundDurationMinutes = 60;
     roundIntermissionMinutes = 5;
     roundChallengeIds = allChallengeIds();
@@ -430,7 +430,7 @@
         </div>
         <div class="space-y-2">
           <p class="text-sm font-medium text-gray-300">Required Defenses</p>
-          <input bind:value={roundRequiredDefenses} type="number" min="1" class="w-full bg-black/40 border border-white/10 rounded-md p-2.5 text-white focus:ring-2 focus:ring-red-500/50 focus:border-red-500 outline-none transition-all" />
+          <input bind:value={roundRequiredDefenses} type="number" min="0" class="w-full bg-black/40 border border-white/10 rounded-md p-2.5 text-white focus:ring-2 focus:ring-red-500/50 focus:border-red-500 outline-none transition-all" />
           <p class="text-xs text-gray-500">Must be &le; {Math.max(0, roundChallengeIds.length - 1)} (one less than selected).</p>
         </div>
         <div class="space-y-2">
